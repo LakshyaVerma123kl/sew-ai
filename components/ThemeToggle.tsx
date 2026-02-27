@@ -5,25 +5,52 @@ import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
-  // Prevent hydration mismatch
   React.useEffect(() => {
     setMounted(true);
   }, []);
 
-  if (!mounted) {
-    return <div className="w-9 h-9" />; // Placeholder to avoid layout shift
-  }
+  if (!mounted) return <div className="w-9 h-9 rounded-full skeleton" />;
+
+  const isDark = resolvedTheme === "dark";
 
   return (
     <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="p-2 rounded-full bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors"
-      aria-label="Toggle dark mode"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      aria-label="Toggle theme"
+      style={{
+        width: "38px",
+        height: "38px",
+        borderRadius: "50%",
+        border: "1px solid var(--border)",
+        background: "var(--bg-input)",
+        color: "var(--text-secondary)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        transition: "all 0.2s ease",
+        flexShrink: 0,
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.borderColor =
+          "var(--brand)";
+        (e.currentTarget as HTMLButtonElement).style.color = "var(--brand)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.borderColor =
+          "var(--border)";
+        (e.currentTarget as HTMLButtonElement).style.color =
+          "var(--text-secondary)";
+      }}
     >
-      {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+      {isDark ? (
+        <Sun size={16} strokeWidth={1.75} />
+      ) : (
+        <Moon size={16} strokeWidth={1.75} />
+      )}
     </button>
   );
 }

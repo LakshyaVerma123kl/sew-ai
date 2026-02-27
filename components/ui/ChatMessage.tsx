@@ -1,6 +1,6 @@
 import React from "react";
-import { cn } from "@/lib/utils";
 import BoundingBoxOverlay, { Detection } from "./BoundingBoxOverlay";
+import { Scissors } from "lucide-react";
 
 interface ChatMessageProps {
   role: "user" | "ai";
@@ -10,94 +10,80 @@ interface ChatMessageProps {
   previewImageUrl?: string | null;
 }
 
-// Simple markdown renderer (bold, italic, headers, code, lists)
+/* ── Lightweight markdown renderer ── */
 function renderMarkdown(text: string) {
   const lines = text.split("\n");
-  const elements: React.ReactNode[] = [];
+  const out: React.ReactNode[] = [];
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    const raw = lines[i];
 
-    if (line.startsWith("### ")) {
-      elements.push(
-        <h3 key={i} className="font-bold text-base mt-3 mb-1">
-          {line.slice(4)}
-        </h3>,
-      );
-    } else if (line.startsWith("## ")) {
-      elements.push(
-        <h2 key={i} className="font-bold text-lg mt-4 mb-1">
-          {line.slice(3)}
-        </h2>,
-      );
-    } else if (line.startsWith("# ")) {
-      elements.push(
-        <h1 key={i} className="font-bold text-xl mt-4 mb-2">
-          {line.slice(2)}
-        </h1>,
-      );
-    } else if (line.startsWith("- ") || line.startsWith("* ")) {
-      elements.push(
-        <li key={i} className="ml-4 list-disc">
-          {formatInline(line.slice(2))}
-        </li>,
-      );
-    } else if (/^\d+\.\s/.test(line)) {
-      elements.push(
-        <li key={i} className="ml-4 list-decimal">
-          {formatInline(line.replace(/^\d+\.\s/, ""))}
-        </li>,
-      );
-    } else if (line.startsWith("```")) {
+    if (raw.startsWith("### ")) {
+      out.push(<h3 key={i}>{inlineFormat(raw.slice(4))}</h3>);
+    } else if (raw.startsWith("## ")) {
+      out.push(<h2 key={i}>{inlineFormat(raw.slice(3))}</h2>);
+    } else if (raw.startsWith("# ")) {
+      out.push(<h1 key={i}>{inlineFormat(raw.slice(2))}</h1>);
+    } else if (raw.startsWith("---") || raw.startsWith("***")) {
+      out.push(<hr key={i} />);
+    } else if (raw.startsWith("```")) {
       const codeLines: string[] = [];
       i++;
       while (i < lines.length && !lines[i].startsWith("```")) {
         codeLines.push(lines[i]);
         i++;
       }
-      elements.push(
-        <pre
-          key={i}
-          className="bg-gray-100 dark:bg-gray-900 rounded-lg p-3 text-xs overflow-x-auto my-2 font-mono"
-        >
-          {codeLines.join("\n")}
+      out.push(
+        <pre key={i}>
+          <code>{codeLines.join("\n")}</code>
         </pre>,
       );
-    } else if (line.trim() === "") {
-      elements.push(<div key={i} className="h-2" />);
-    } else {
-      elements.push(
-        <p key={i} className="leading-relaxed">
-          {formatInline(line)}
-        </p>,
+    } else if (/^[-*]\s/.test(raw)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s/.test(lines[i])) {
+        items.push(lines[i].slice(2));
+        i++;
+      }
+      out.push(
+        <ul key={i}>
+          {items.map((it, j) => (
+            <li key={j}>{inlineFormat(it)}</li>
+          ))}
+        </ul>,
       );
+      continue;
+    } else if (/^\d+\.\s/.test(raw)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+\.\s/, ""));
+        i++;
+      }
+      out.push(
+        <ol key={i}>
+          {items.map((it, j) => (
+            <li key={j}>{inlineFormat(it)}</li>
+          ))}
+        </ol>,
+      );
+      continue;
+    } else if (raw.trim() !== "") {
+      out.push(<p key={i}>{inlineFormat(raw)}</p>);
     }
     i++;
   }
-  return elements;
+  return out;
 }
 
-function formatInline(text: string): React.ReactNode {
-  // Bold **text**
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+function inlineFormat(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|__[^_]+__)/g);
   return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
+    if (/^\*\*.*\*\*$/.test(part))
       return <strong key={i}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return (
-        <code
-          key={i}
-          className="bg-gray-100 dark:bg-gray-800 px-1 rounded text-xs font-mono"
-        >
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    if (part.startsWith("*") && part.endsWith("*")) {
-      return <em key={i}>{part.slice(1, -1)}</em>;
-    }
+    if (/^`.*`$/.test(part)) return <code key={i}>{part.slice(1, -1)}</code>;
+    if (/^\*.*\*$/.test(part)) return <em key={i}>{part.slice(1, -1)}</em>;
+    if (/^__.*__$/.test(part))
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
     return part;
   });
 }
@@ -113,29 +99,68 @@ export default function ChatMessage({
 
   return (
     <div
-      className={cn(
-        "flex w-full mb-6",
-        isUser ? "justify-end" : "justify-start",
-      )}
+      className="animate-fade-slide-up"
+      style={{
+        display: "flex",
+        width: "100%",
+        marginBottom: "1.25rem",
+        justifyContent: isUser ? "flex-end" : "flex-start",
+        gap: "0.5rem",
+        alignItems: "flex-start",
+      }}
     >
       {/* AI Avatar */}
       {!isUser && (
-        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold mr-2 flex-shrink-0 mt-1">
-          AI
+        <div
+          style={{
+            width: "32px",
+            height: "32px",
+            borderRadius: "50%",
+            background: "var(--brand)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            marginTop: "2px",
+            boxShadow: "0 2px 8px rgba(200,133,58,0.35)",
+          }}
+        >
+          <Scissors size={14} color="#fff" strokeWidth={2} />
         </div>
       )}
 
+      {/* Bubble */}
       <div
-        className={cn(
-          "max-w-[85%] sm:max-w-[75%] flex flex-col gap-3 px-4 py-3 rounded-2xl text-sm",
-          isUser
-            ? "bg-blue-600 text-white rounded-br-none"
-            : "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-bl-none border border-gray-200 dark:border-gray-700 shadow-sm",
-        )}
+        style={{
+          maxWidth: "min(80%, 580px)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.75rem",
+          borderRadius: isUser ? "20px 20px 4px 20px" : "4px 20px 20px 20px",
+          padding: "0.875rem 1rem",
+          fontSize: "0.875rem",
+          lineHeight: 1.65,
+          boxShadow: "var(--shadow-sm)",
+          background: isUser
+            ? "linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%)"
+            : "var(--bg-card)",
+          color: isUser ? "#fff" : "var(--text-primary)",
+          border: isUser ? "none" : "1px solid var(--border)",
+          wordBreak: "break-word",
+          transition: "background 0.3s, border-color 0.3s",
+        }}
       >
-        {/* User image or AI overlay */}
+        {/* Image */}
         {imageSrc && (
-          <div className="w-full max-w-sm rounded-lg overflow-hidden border border-white/20">
+          <div
+            style={{
+              borderRadius: "12px",
+              overflow: "hidden",
+              border: isUser
+                ? "1px solid rgba(255,255,255,0.2)"
+                : "1px solid var(--border)",
+            }}
+          >
             {detections && detections.length > 0 ? (
               <BoundingBoxOverlay
                 imageSrc={imageSrc}
@@ -146,43 +171,76 @@ export default function ChatMessage({
             ) : (
               <img
                 src={imageSrc}
-                alt="Uploaded dress"
-                className="w-full h-auto object-cover"
+                alt="Uploaded garment"
+                style={{
+                  width: "100%",
+                  height: "auto",
+                  display: "block",
+                  objectFit: "cover",
+                }}
               />
             )}
           </div>
         )}
 
-        {/* AI-generated "after fix" preview */}
+        {/* Preview after fix */}
         {previewImageUrl && (
-          <div className="mt-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 font-semibold uppercase tracking-wide">
-              ✨ AI Preview — After Fix
+          <div>
+            <p
+              style={{
+                fontSize: "0.68rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                fontWeight: 700,
+                color: "var(--brand)",
+                marginBottom: "0.4rem",
+              }}
+            >
+              ✦ AI Preview — After Fix
             </p>
             <img
               src={previewImageUrl}
               alt="AI fixed preview"
-              className="w-full h-auto rounded-lg border border-blue-200 dark:border-blue-700 shadow"
+              style={{
+                width: "100%",
+                height: "auto",
+                borderRadius: "10px",
+                border: "1px solid var(--brand-light)",
+                display: "block",
+              }}
             />
           </div>
         )}
 
-        {/* Markdown content */}
-        <div className={cn("leading-relaxed", isUser ? "text-white" : "")}>
-          {isUser ? (
-            <p className="whitespace-pre-wrap">{content}</p>
-          ) : (
-            <div className="prose prose-sm dark:prose-invert max-w-none">
-              {renderMarkdown(content)}
-            </div>
-          )}
-        </div>
+        {/* Text */}
+        {isUser ? (
+          <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{content}</p>
+        ) : (
+          <div className="tailor-prose">{renderMarkdown(content)}</div>
+        )}
       </div>
 
       {/* User Avatar */}
       {isUser && (
-        <div className="w-8 h-8 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs font-bold ml-2 flex-shrink-0 mt-1">
-          You
+        <div
+          style={{
+            width: "32px",
+            height: "32px",
+            borderRadius: "50%",
+            background: "var(--bg-input)",
+            border: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            marginTop: "2px",
+            fontSize: "0.6rem",
+            fontWeight: 700,
+            color: "var(--text-muted)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          YOU
         </div>
       )}
     </div>

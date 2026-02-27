@@ -1,23 +1,295 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap");
 
-/* Tailwind v4 handles dark mode automatically via the 'class' strategy 
-  when paired with next-themes. 
-  You can define custom theme variables here if needed:
-*/
-@theme {
-  --color-brand-500: #3b82f6;
+/* ── CSS Design Tokens ───────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --bg-base: #f7f5f2;
+  --bg-card: #ffffff;
+  --bg-input: #f0ede8;
+  --bg-accent: #1a1a2e;
+
+  /* Text */
+  --text-primary: #1a1610;
+  --text-secondary: #6b6358;
+  --text-muted: #a09890;
+  --text-inverse: #f7f5f2;
+
+  /* Brand */
+  --brand: #c8853a;
+  --brand-light: #e8b07a;
+  --brand-dark: #9a6228;
+  --brand-subtle: #f5e8d8;
+
+  /* Borders */
+  --border: #e2ddd6;
+  --border-strong: #c8c0b4;
+
+  /* Status */
+  --success: #2d7a4a;
+  --success-bg: #e8f5ed;
+  --error: #c0392b;
+  --error-bg: #fdecea;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.1), 0 4px 8px rgba(0, 0, 0, 0.06);
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* Typography */
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
 }
 
-/* Base styles to ensure smooth transitions between themes */
-@layer base {
-  *,
-  ::before,
-  ::after {
-    border-color: var(--color-gray-200);
+.dark {
+  --bg-base: #0f0e0c;
+  --bg-card: #1c1a17;
+  --bg-input: #252319;
+  --bg-accent: #c8853a;
+
+  --text-primary: #f0ede8;
+  --text-secondary: #a09080;
+  --text-muted: #6b6050;
+  --text-inverse: #1a1610;
+
+  --brand: #e8a855;
+  --brand-light: #f0c07a;
+  --brand-dark: #c8853a;
+  --brand-subtle: #2a2018;
+
+  --border: #2e2b24;
+  --border-strong: #403c32;
+
+  --success: #4ade80;
+  --success-bg: #0d2818;
+  --error: #f87171;
+  --error-bg: #2a0d0d;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Base ────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ── Animations ──────────────────────────────────────────── */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
-  .dark *,
-  .dark ::before,
-  .dark ::after {
-    border-color: var(--color-gray-800);
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes bounce-dot {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(200, 133, 58, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(200, 133, 58, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(200, 133, 58, 0);
+  }
+}
+
+.animate-fade-slide-up {
+  animation: fadeSlideUp 0.4s ease both;
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease both;
+}
+.animate-pulse-ring {
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+
+/* ── Dot bounce for loading ──────────────────────────────── */
+.dot-bounce {
+  display: inline-block;
+  animation: bounce-dot 1.2s ease-in-out infinite;
+}
+.dot-bounce:nth-child(1) {
+  animation-delay: 0s;
+}
+.dot-bounce:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.dot-bounce:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* ── Skeleton shimmer ────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-input) 25%,
+    var(--border) 50%,
+    var(--bg-input) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Prose markdown ──────────────────────────────────────── */
+.tailor-prose h1 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 1.25rem 0 0.5rem;
+  color: var(--text-primary);
+}
+.tailor-prose h2 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.4rem;
+  color: var(--text-primary);
+}
+.tailor-prose h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.3rem;
+  color: var(--text-primary);
+}
+.tailor-prose p {
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+}
+.tailor-prose ul,
+.tailor-prose ol {
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.tailor-prose li {
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin-bottom: 0.2rem;
+}
+.tailor-prose ul li {
+  list-style-type: disc;
+}
+.tailor-prose ol li {
+  list-style-type: decimal;
+}
+.tailor-prose strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tailor-prose em {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+.tailor-prose code {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.8em;
+  font-family: "Fira Code", monospace;
+}
+.tailor-prose pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+.tailor-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.tailor-prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1rem 0;
+}
+
+/* ── Utility: no tap highlight on mobile ─────────────────── */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Safe area insets for mobile ─────────────────────────── */
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }

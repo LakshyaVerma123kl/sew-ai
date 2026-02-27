@@ -21,38 +21,57 @@ export default function BoundingBoxOverlay({
 }: Props) {
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-gray-200 shadow-sm"
-      style={{ width, height }}
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        width,
+        height,
+        display: "block",
+      }}
     >
       <img
         src={imageSrc}
-        alt="Analyzed"
-        className="w-full h-full object-cover"
+        alt="Analyzed garment"
+        style={{
+          width: "100%",
+          height: "auto",
+          display: "block",
+          objectFit: "cover",
+        }}
       />
-
-      {detections.map((det, i) => {
-        const left = det.box.xmin;
-        const top = det.box.ymin;
-        const boxWidth = det.box.xmax - det.box.xmin;
-        const boxHeight = det.box.ymax - det.box.ymin;
-
-        return (
-          <div
-            key={i}
-            className="absolute border-2 border-green-500 bg-green-500/20"
+      {detections.map((det, i) => (
+        <div
+          key={i}
+          style={{
+            position: "absolute",
+            left: `${det.box.xmin}%`,
+            top: `${det.box.ymin}%`,
+            width: `${det.box.xmax - det.box.xmin}%`,
+            height: `${det.box.ymax - det.box.ymin}%`,
+            border: "2px solid var(--brand)",
+            background: "rgba(200,133,58,0.12)",
+            borderRadius: "4px",
+          }}
+        >
+          <span
             style={{
-              left: `${left}%`,
-              top: `${top}%`,
-              width: `${boxWidth}%`,
-              height: `${boxHeight}%`,
+              position: "absolute",
+              top: "-22px",
+              left: 0,
+              background: "var(--brand)",
+              color: "#fff",
+              fontSize: "10px",
+              fontWeight: 700,
+              padding: "2px 6px",
+              borderRadius: "4px",
+              whiteSpace: "nowrap",
+              fontFamily: "var(--font-body)",
             }}
           >
-            <span className="absolute -top-6 left-0 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap">
-              {det.label} {Math.round(det.confidence * 100)}%
-            </span>
-          </div>
-        );
-      })}
+            {det.label} {Math.round(det.confidence * 100)}%
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

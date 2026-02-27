@@ -11,6 +11,7 @@ import {
   X,
   Video,
   VideoOff,
+  Image,
 } from "lucide-react";
 
 interface ChatInputProps {
@@ -22,6 +23,23 @@ interface ChatInputProps {
   isAnalyzing: boolean;
 }
 
+const BTN = {
+  base: {
+    width: "40px",
+    height: "40px",
+    borderRadius: "50%",
+    border: "1px solid var(--border)",
+    background: "var(--bg-input)",
+    color: "var(--text-secondary)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    flexShrink: 0,
+    transition: "all 0.18s ease",
+  } as React.CSSProperties,
+};
+
 export default function ChatInput({
   onSendMessage,
   isAnalyzing,
@@ -32,24 +50,34 @@ export default function ChatInput({
   const [isRecording, setIsRecording] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
-  const [liveSpeaking, setLiveSpeaking] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
 
   const webcamRef = useRef<Webcam>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const liveIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const liveMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const liveAudioRef = useRef<MediaRecorder | null>(null);
+  const liveAudioStreamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // --- CAPTURE IMAGE ---
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height =
+        Math.min(textareaRef.current.scrollHeight, 120) + "px";
+    }
+  }, [text]);
+
   const capture = useCallback(() => {
-    if (webcamRef.current) {
-      const screenshot = webcamRef.current.getScreenshot();
+    const screenshot = webcamRef.current?.getScreenshot();
+    if (screenshot) {
       setImageSrc(screenshot);
       setShowCamera(false);
     }
   }, []);
 
-  // --- FILE UPLOAD ---
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -57,9 +85,10 @@ export default function ChatInput({
       reader.onloadend = () => setImageSrc(reader.result as string);
       reader.readAsDataURL(file);
     }
+    e.target.value = "";
   };
 
-  // --- AUDIO RECORDING ---
+  // Voice recording
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -70,83 +99,79 @@ export default function ChatInput({
       mr.onstop = () => {
         setAudioBlob(new Blob(chunks, { type: "audio/webm" }));
         stream.getTracks().forEach((t) => t.stop());
+        setRecordSeconds(0);
+        if (timerRef.current) clearInterval(timerRef.current);
       };
       mr.start();
       setIsRecording(true);
+      setRecordSeconds(0);
+      timerRef.current = setInterval(
+        () => setRecordSeconds((s) => s + 1),
+        1000,
+      );
     } catch (err) {
-      console.error("Mic access failed", err);
+      console.error("Mic failed", err);
     }
   };
 
   const stopRecording = () => {
     mediaRecorderRef.current?.stop();
     setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
   };
 
-  // --- LIVE MODE: capture frame + record audio every N seconds ---
+  // Live mode
   const startLiveMode = async () => {
     setLiveMode(true);
     setShowCamera(true);
-    setLiveSpeaking(true);
-
     try {
       const audioStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
-      const mr = new MediaRecorder(audioStream);
-      liveMediaRecorderRef.current = mr;
-
-      liveIntervalRef.current = setInterval(async () => {
-        // Capture frame
-        const frame = webcamRef.current?.getScreenshot();
-        if (!frame) return;
-
-        // Collect last ~3s of audio
+      liveAudioStreamRef.current = audioStream;
+      const startMr = () => {
+        const mr = new MediaRecorder(audioStream);
+        liveAudioRef.current = mr;
         const chunks: BlobPart[] = [];
         mr.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
-        mr.stop();
         mr.onstop = async () => {
-          const blob = new Blob(chunks, { type: "audio/webm" });
-          audioStream.getTracks().forEach((t) => t.stop());
-          // Send live frame + audio
-          onSendMessage(frame, blob, "[Live Mode]");
-          // Restart recording
-          try {
-            const newStream = await navigator.mediaDevices.getUserMedia({
-              audio: true,
-            });
-            const newMr = new MediaRecorder(newStream);
-            liveMediaRecorderRef.current = newMr;
-            newMr.start();
-          } catch (_) {}
+          const frame = webcamRef.current?.getScreenshot();
+          if (frame) {
+            const blob = new Blob(chunks, { type: "audio/webm" });
+            onSendMessage(frame, blob, "[Live Mode]");
+          }
         };
+        mr.start();
+      };
+      startMr();
+      liveIntervalRef.current = setInterval(() => {
+        liveAudioRef.current?.stop();
+        setTimeout(startMr, 200);
       }, 5000);
-
-      mr.start();
     } catch (err) {
       console.error("Live mode failed", err);
-      setLiveMode(false);
-      setLiveSpeaking(false);
+      stopLiveMode();
     }
   };
 
   const stopLiveMode = () => {
     if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
-    liveMediaRecorderRef.current?.stop();
+    liveAudioRef.current?.stop();
+    liveAudioStreamRef.current?.getTracks().forEach((t) => t.stop());
     setLiveMode(false);
-    setLiveSpeaking(false);
     setShowCamera(false);
   };
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
-    };
-  }, []);
+      if (timerRef.current) clearInterval(timerRef.current);
+    },
+    [],
+  );
 
-  // --- SEND ---
   const handleSend = () => {
+    if (isAnalyzing) return;
     if (!imageSrc && !text.trim()) return;
     onSendMessage(imageSrc, audioBlob, text);
     setText("");
@@ -161,170 +186,474 @@ export default function ChatInput({
     }
   };
 
-  const canSend = (imageSrc || text.trim()) && !isAnalyzing;
+  const fmtTime = (s: number) =>
+    `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const canSend = (!!imageSrc || !!text.trim()) && !isAnalyzing;
 
   return (
-    <div className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 p-4">
+    <>
       {/* Camera Modal */}
       {showCamera && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-gray-900 rounded-2xl overflow-hidden w-full max-w-sm shadow-2xl">
-            <div className="flex items-center justify-between p-3 border-b border-gray-700">
-              <span className="text-white font-semibold text-sm">
-                {liveMode
-                  ? "🔴 Live Mode — Auto capturing every 5s"
-                  : "Take a Photo"}
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
+            background: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+          }}
+        >
+          <div
+            style={{
+              background: "var(--bg-card)",
+              borderRadius: "20px",
+              overflow: "hidden",
+              width: "100%",
+              maxWidth: "400px",
+              boxShadow: "var(--shadow-lg)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            {/* Modal header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0.875rem 1rem",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  color: "var(--text-primary)",
+                }}
+              >
+                {liveMode ? "🔴 Live Mode" : "Take a Photo"}
               </span>
               <button
                 onClick={() => {
                   if (liveMode) stopLiveMode();
                   else setShowCamera(false);
                 }}
-                className="text-gray-400 hover:text-white"
+                style={{
+                  ...BTN.base,
+                  width: "32px",
+                  height: "32px",
+                  border: "none",
+                }}
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
-            <Webcam
-              audio={false}
-              ref={webcamRef}
-              screenshotFormat="image/jpeg"
-              videoConstraints={{ facingMode: "environment" }}
-              className="w-full aspect-[4/3] object-cover"
-            />
+
+            {/* Webcam */}
+            <div style={{ position: "relative", background: "#000" }}>
+              <Webcam
+                audio={false}
+                ref={webcamRef}
+                screenshotFormat="image/jpeg"
+                videoConstraints={{ facingMode: { ideal: "environment" } }}
+                style={{
+                  width: "100%",
+                  display: "block",
+                  aspectRatio: "4/3",
+                  objectFit: "cover",
+                }}
+              />
+              {liveMode && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    left: "12px",
+                    background: "rgba(200,0,0,0.85)",
+                    color: "#fff",
+                    fontSize: "0.7rem",
+                    fontWeight: 700,
+                    padding: "3px 8px",
+                    borderRadius: "99px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      background: "#ff6b6b",
+                      display: "inline-block",
+                      animation: "pulse 1s ease-in-out infinite",
+                    }}
+                  />
+                  LIVE
+                </div>
+              )}
+            </div>
+
             {!liveMode && (
-              <div className="p-3 flex gap-2">
+              <div
+                style={{ padding: "0.875rem", display: "flex", gap: "0.5rem" }}
+              >
                 <button
                   onClick={capture}
-                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold flex items-center justify-center gap-2"
+                  style={{
+                    flex: 1,
+                    padding: "0.75rem",
+                    background: "var(--brand)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "12px",
+                    fontFamily: "var(--font-body)",
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                    transition: "opacity 0.2s",
+                  }}
                 >
-                  <Camera size={18} /> Capture
+                  <Camera size={16} /> Capture
                 </button>
               </div>
+            )}
+
+            {liveMode && (
+              <p
+                style={{
+                  textAlign: "center",
+                  padding: "0.75rem",
+                  fontSize: "0.75rem",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Auto-sending every 5 seconds
+              </p>
             )}
           </div>
         </div>
       )}
 
-      {/* Image preview */}
-      {imageSrc && (
-        <div className="relative inline-block mb-3">
-          <img
-            src={imageSrc}
-            alt="Preview"
-            className="h-20 w-20 object-cover rounded-xl border border-gray-300 dark:border-gray-600"
+      {/* Main input container */}
+      <div
+        style={{
+          background: "var(--bg-card)",
+          borderTop: "1px solid var(--border)",
+          padding: "0.75rem 1rem",
+          paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+          transition: "background 0.3s, border-color 0.3s",
+        }}
+      >
+        {/* Image preview */}
+        {imageSrc && (
+          <div style={{ marginBottom: "0.625rem" }}>
+            <div style={{ position: "relative", display: "inline-block" }}>
+              <img
+                src={imageSrc}
+                alt="Preview"
+                style={{
+                  height: "72px",
+                  width: "72px",
+                  objectFit: "cover",
+                  borderRadius: "10px",
+                  border: "1px solid var(--border)",
+                  display: "block",
+                }}
+              />
+              <button
+                onClick={() => setImageSrc(null)}
+                style={{
+                  position: "absolute",
+                  top: "-6px",
+                  right: "-6px",
+                  width: "20px",
+                  height: "20px",
+                  borderRadius: "50%",
+                  background: "var(--error)",
+                  color: "#fff",
+                  border: "2px solid var(--bg-card)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                <X size={10} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Audio indicator */}
+        {(audioBlob || isRecording) && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginBottom: "0.625rem",
+              padding: "0.4rem 0.75rem",
+              background: isRecording ? "var(--error-bg)" : "var(--success-bg)",
+              borderRadius: "99px",
+              width: "fit-content",
+              border: `1px solid ${isRecording ? "var(--error)" : "var(--success)"}`,
+            }}
+          >
+            <span
+              style={{
+                width: "7px",
+                height: "7px",
+                borderRadius: "50%",
+                background: isRecording ? "var(--error)" : "var(--success)",
+                display: "inline-block",
+                animation: isRecording
+                  ? "pulse 0.8s ease-in-out infinite"
+                  : "none",
+              }}
+            />
+            <span
+              style={{
+                fontSize: "0.72rem",
+                fontWeight: 600,
+                color: isRecording ? "var(--error)" : "var(--success)",
+              }}
+            >
+              {isRecording
+                ? `Recording ${fmtTime(recordSeconds)}`
+                : "Voice note ready"}
+            </span>
+            {!isRecording && audioBlob && (
+              <button
+                onClick={() => setAudioBlob(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--error)",
+                  display: "flex",
+                  padding: "0 2px",
+                }}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Input row */}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "0.5rem" }}>
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: "0.375rem", flexShrink: 0 }}>
+            {/* Camera */}
+            <IconBtn
+              onClick={() => {
+                setShowCamera(true);
+              }}
+              title="Take photo"
+              active={showCamera && !liveMode}
+            >
+              <Camera size={17} />
+            </IconBtn>
+
+            {/* Upload */}
+            <IconBtn
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload image"
+            >
+              <Image size={17} />
+            </IconBtn>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleUpload}
+            />
+
+            {/* Live mode */}
+            <IconBtn
+              onClick={liveMode ? stopLiveMode : startLiveMode}
+              title={liveMode ? "Stop live mode" : "Live mode"}
+              active={liveMode}
+              danger={liveMode}
+            >
+              {liveMode ? <VideoOff size={17} /> : <Video size={17} />}
+            </IconBtn>
+
+            {/* Mic */}
+            <IconBtn
+              onClick={isRecording ? stopRecording : startRecording}
+              title={isRecording ? "Stop recording" : "Record voice note"}
+              active={isRecording}
+              danger={isRecording}
+            >
+              {isRecording ? <Square size={17} /> : <Mic size={17} />}
+            </IconBtn>
+          </div>
+
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Describe the issue or ask anything…"
+            rows={1}
+            style={{
+              flex: 1,
+              resize: "none",
+              minHeight: "40px",
+              maxHeight: "120px",
+              borderRadius: "12px",
+              border: "1px solid var(--border)",
+              background: "var(--bg-input)",
+              color: "var(--text-primary)",
+              padding: "0.6rem 0.875rem",
+              fontSize: "0.875rem",
+              fontFamily: "var(--font-body)",
+              lineHeight: 1.5,
+              outline: "none",
+              transition: "border-color 0.2s, background 0.3s",
+              overflowY: "auto",
+            }}
+            onFocus={(e) =>
+              (e.currentTarget.style.borderColor = "var(--brand)")
+            }
+            onBlur={(e) =>
+              (e.currentTarget.style.borderColor = "var(--border)")
+            }
           />
+
+          {/* Send */}
           <button
-            onClick={() => setImageSrc(null)}
-            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5"
+            onClick={handleSend}
+            disabled={!canSend}
+            style={{
+              width: "40px",
+              height: "40px",
+              borderRadius: "50%",
+              flexShrink: 0,
+              background: canSend ? "var(--brand)" : "var(--bg-input)",
+              border: `1px solid ${canSend ? "var(--brand)" : "var(--border)"}`,
+              color: canSend ? "#fff" : "var(--text-muted)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: canSend ? "pointer" : "not-allowed",
+              transition: "all 0.2s",
+              boxShadow: canSend ? "0 2px 8px rgba(200,133,58,0.35)" : "none",
+            }}
           >
-            <X size={12} />
+            {isAnalyzing ? (
+              <Loader2
+                size={17}
+                style={{ animation: "spin 1s linear infinite" }}
+              />
+            ) : (
+              <Send size={17} />
+            )}
           </button>
         </div>
-      )}
 
-      {/* Audio indicator */}
-      {audioBlob && (
-        <div className="flex items-center gap-2 mb-2 text-xs text-green-600 dark:text-green-400">
-          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          Voice note ready
-          <button
-            onClick={() => setAudioBlob(null)}
-            className="text-red-500 ml-1"
+        {liveMode && (
+          <p
+            style={{
+              textAlign: "center",
+              fontSize: "0.7rem",
+              color: "var(--brand)",
+              marginTop: "0.5rem",
+              fontWeight: 600,
+              letterSpacing: "0.05em",
+            }}
           >
-            <X size={12} />
-          </button>
-        </div>
-      )}
-
-      {/* Input Row */}
-      <div className="flex items-end gap-2">
-        {/* Camera button */}
-        <button
-          onClick={() => {
-            setShowCamera(true);
-            setLiveMode(false);
-          }}
-          className="p-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 hover:text-blue-600 transition-colors flex-shrink-0"
-          title="Take photo"
-        >
-          <Camera size={20} />
-        </button>
-
-        {/* Upload button */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="p-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 hover:text-blue-600 transition-colors flex-shrink-0"
-          title="Upload image"
-        >
-          <Upload size={20} />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleUpload}
-        />
-
-        {/* Live Mode button */}
-        <button
-          onClick={liveMode ? stopLiveMode : startLiveMode}
-          className={`p-3 rounded-xl flex-shrink-0 transition-colors ${
-            liveMode
-              ? "bg-red-500 text-white animate-pulse"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-purple-100 dark:hover:bg-purple-900/40 hover:text-purple-600"
-          }`}
-          title={
-            liveMode ? "Stop live mode" : "Live mode (auto capture + voice)"
-          }
-        >
-          {liveMode ? <VideoOff size={20} /> : <Video size={20} />}
-        </button>
-
-        {/* Mic button */}
-        <button
-          onClick={isRecording ? stopRecording : startRecording}
-          className={`p-3 rounded-xl flex-shrink-0 transition-colors ${
-            isRecording
-              ? "bg-red-500 text-white animate-pulse"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-green-100 dark:hover:bg-green-900/40 hover:text-green-600"
-          }`}
-          title={isRecording ? "Stop recording" : "Record voice note"}
-        >
-          {isRecording ? <Square size={20} /> : <Mic size={20} />}
-        </button>
-
-        {/* Text input */}
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Describe the issue or ask a question…"
-          rows={1}
-          className="flex-1 resize-none rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-          style={{ minHeight: "48px", maxHeight: "120px" }}
-        />
-
-        {/* Send button */}
-        <button
-          onClick={handleSend}
-          disabled={!canSend}
-          className="p-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-        >
-          {isAnalyzing ? (
-            <Loader2 size={20} className="animate-spin" />
-          ) : (
-            <Send size={20} />
-          )}
-        </button>
+            🔴 LIVE — sending every 5 seconds
+          </p>
+        )}
       </div>
 
-      {liveMode && (
-        <p className="text-xs text-center text-purple-500 mt-2 animate-pulse">
-          🔴 Live Mode active — capturing every 5 seconds
-        </p>
-      )}
-    </div>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
+    </>
+  );
+}
+
+/* ── Small icon button helper ── */
+function IconBtn({
+  children,
+  onClick,
+  title,
+  active = false,
+  danger = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title?: string;
+  active?: boolean;
+  danger?: boolean;
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        width: "40px",
+        height: "40px",
+        borderRadius: "50%",
+        flexShrink: 0,
+        border: `1px solid ${
+          active
+            ? danger
+              ? "var(--error)"
+              : "var(--brand)"
+            : hovered
+              ? "var(--brand)"
+              : "var(--border)"
+        }`,
+        background: active
+          ? danger
+            ? "var(--error-bg)"
+            : "var(--brand-subtle)"
+          : hovered
+            ? "var(--brand-subtle)"
+            : "var(--bg-input)",
+        color: active
+          ? danger
+            ? "var(--error)"
+            : "var(--brand)"
+          : hovered
+            ? "var(--brand)"
+            : "var(--text-secondary)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        transition: "all 0.18s ease",
+        animation:
+          active && danger ? "pulse-ring 1.5s ease-out infinite" : "none",
+      }}
+    >
+      {children}
+    </button>
   );
 }

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Scissors } from "lucide-react";
 import ChatMessage from "@/components/ui/ChatMessage";
 import ChatInput from "@/components/ui/ChatInput";
-import { ThemeToggle } from "@/components/ThemeToggle"; // Optional, if you added it
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type Message = {
   id: string;
@@ -12,6 +12,7 @@ type Message = {
   content: string;
   imageSrc?: string | null;
   detections?: any[];
+  previewImageUrl?: string | null;
 };
 
 export default function HomeChat() {
@@ -20,13 +21,12 @@ export default function HomeChat() {
       id: "welcome-1",
       role: "ai",
       content:
-        "Hi! I'm your Tailor AI. Need help fixing a garment? \n\nSnap a picture of the dress using the camera icon below, record a quick voice note explaining what's wrong, and I'll show you exactly how to fix it.",
+        "Hi! I'm your **Tailor AI**. Need help fixing a garment?\n\nSnap a picture using the 📷 camera icon, record a 🎙️ voice note explaining what's wrong, and I'll diagnose the issue and show you exactly how to fix it — plus a preview of what it'll look like after!",
     },
   ]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -36,11 +36,15 @@ export default function HomeChat() {
     audioBlob: Blob | null,
     text: string,
   ) => {
-    // 1. Add user message to UI immediately
     const userMsgId = Date.now().toString();
     const userContent =
-      text ||
-      (audioBlob ? "[Voice Note Attached]" : "Please analyze this image.");
+      text && text !== "[Live Mode]"
+        ? text
+        : imageSrc
+          ? audioBlob
+            ? "🎙️ Voice note + image attached"
+            : "Please analyze this image."
+          : text;
 
     setMessages((prev) => [
       ...prev,
@@ -52,15 +56,48 @@ export default function HomeChat() {
       },
     ]);
 
-    // If there's no image, we can just do standard text chat (you can route this to /api/chat later)
+    // Text-only chat (no image)
     if (!imageSrc) {
-      alert("For the best results, please attach an image of the dress!");
+      if (!text.trim()) return;
+      setIsAnalyzing(true);
+      try {
+        const chatMessages = messages
+          .filter((m) => !m.imageSrc) // only text messages for chat context
+          .map((m) => ({
+            role: m.role === "ai" ? "assistant" : "user",
+            content: m.content,
+          }));
+        chatMessages.push({ role: "user", content: text });
+
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: chatMessages }),
+        });
+        const data = await response.json();
+        if (data.success) {
+          setMessages((prev) => [
+            ...prev,
+            { id: Date.now().toString(), role: "ai", content: data.message },
+          ]);
+        }
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: "ai",
+            content: "Sorry, I had trouble processing that. Please try again.",
+          },
+        ]);
+      } finally {
+        setIsAnalyzing(false);
+      }
       return;
     }
 
     setIsAnalyzing(true);
 
-    // 2. Prepare Data for API
     const formData = new FormData();
     formData.append("image", imageSrc);
     if (audioBlob) {
@@ -69,9 +106,11 @@ export default function HomeChat() {
         new File([audioBlob], "recording.webm", { type: "audio/webm" }),
       );
     }
+    if (text && text !== "[Live Mode]") {
+      formData.append("text", text);
+    }
 
     try {
-      // 3. Call the Multimodal AI Backend
       const response = await fetch("/api/analyze", {
         method: "POST",
         body: formData,
@@ -80,15 +119,35 @@ export default function HomeChat() {
       const data = await response.json();
 
       if (data.success) {
-        // 4. Add AI response to UI
+        // Get preview image
+        let previewImageUrl: string | null = null;
+        try {
+          const previewRes = await fetch("/api/preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              originalImage: imageSrc,
+              prompt: data.analysis,
+              maskCoordinates: data.detections || [],
+            }),
+          });
+          const previewData = await previewRes.json();
+          if (previewData.success && previewData.previewUrl) {
+            previewImageUrl = previewData.previewUrl;
+          }
+        } catch (_) {
+          // Preview generation failed silently
+        }
+
         setMessages((prev) => [
           ...prev,
           {
             id: Date.now().toString(),
             role: "ai",
             content: data.analysis,
-            imageSrc: imageSrc, // Pass the image back so we can overlay boxes
-            detections: data.detections || [], // Assuming Python API integrated in /api/analyze
+            imageSrc: imageSrc,
+            detections: data.detections || [],
+            previewImageUrl,
           },
         ]);
       } else {
@@ -101,7 +160,8 @@ export default function HomeChat() {
         {
           id: Date.now().toString(),
           role: "ai",
-          content: "Sorry, I had trouble analyzing that. Please try again.",
+          content:
+            "Sorry, I had trouble analyzing that. Please try again or rephrase your question.",
         },
       ]);
     } finally {
@@ -111,18 +171,23 @@ export default function HomeChat() {
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
-      {/* Top Navigation Bar */}
+      {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 z-10">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
             <Scissors className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight">Tailor AI</h1>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Tailor AI</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Smart sewing assistant
+            </p>
+          </div>
         </div>
         <ThemeToggle />
       </header>
 
-      {/* Chat Messages Area */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 w-full max-w-4xl mx-auto scroll-smooth">
         {messages.map((msg) => (
           <ChatMessage
@@ -131,12 +196,41 @@ export default function HomeChat() {
             content={msg.content}
             imageSrc={msg.imageSrc}
             detections={msg.detections}
+            previewImageUrl={msg.previewImageUrl}
           />
         ))}
+
+        {isAnalyzing && (
+          <div className="flex justify-start mb-6">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold mr-2 flex-shrink-0 mt-1">
+              AI
+            </div>
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-bl-none px-4 py-3 shadow-sm">
+              <div className="flex gap-1.5 items-center">
+                <span
+                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0ms" }}
+                />
+                <span
+                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "150ms" }}
+                />
+                <span
+                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "300ms" }}
+                />
+                <span className="ml-2 text-xs text-gray-500">
+                  Analyzing your garment…
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Bottom Input Area */}
+      {/* Input */}
       <div className="w-full">
         <ChatInput
           onSendMessage={handleSendMessage}

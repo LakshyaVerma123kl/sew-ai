@@ -9,15 +9,15 @@ export interface Detection {
 interface Props {
   imageSrc: string;
   detections: Detection[];
-  width: number; // Rendered width of the container
-  height: number; // Rendered height of the container
+  width?: number | string;
+  height?: number | string;
 }
 
 export default function BoundingBoxOverlay({
   imageSrc,
   detections,
-  width,
-  height,
+  width = "100%",
+  height = "auto",
 }: Props) {
   return (
     <div
@@ -31,12 +31,10 @@ export default function BoundingBoxOverlay({
       />
 
       {detections.map((det, i) => {
-        // Assuming your Python backend returns coordinates relative to the original image dimensions.
-        // You will need to calculate percentages to overlay them correctly.
-        const left = (det.box.xmin / width) * 100;
-        const top = (det.box.ymin / height) * 100;
-        const boxWidth = ((det.box.xmax - det.box.xmin) / width) * 100;
-        const boxHeight = ((det.box.ymax - det.box.ymin) / height) * 100;
+        const left = det.box.xmin;
+        const top = det.box.ymin;
+        const boxWidth = det.box.xmax - det.box.xmin;
+        const boxHeight = det.box.ymax - det.box.ymin;
 
         return (
           <div
@@ -50,7 +48,7 @@ export default function BoundingBoxOverlay({
             }}
           >
             <span className="absolute -top-6 left-0 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap">
-              {det.label}
+              {det.label} {Math.round(det.confidence * 100)}%
             </span>
           </div>
         );
